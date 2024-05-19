@@ -1,0 +1,32 @@
+{
+    "C_Cpp.intelliSenseEngine": "default",
+    "idf.adapterTargetName": "esp32",
+    "idf.customExtraPaths": "d:\\ESP_IDF_TOOL\\tools\\xtensa-esp-elf-gdb\\12.1_20231023\\xtensa-esp-elf-gdb\\bin;d:\\ESP_IDF_TOOL\\tools\\riscv32-esp-elf-gdb\\12.1_20231023\\riscv32-esp-elf-gdb\\bin;d:\\ESP_IDF_TOOL\\tools\\xtensa-esp-elf\\esp-13.2.0_20230928\\xtensa-esp-elf\\bin;d:\\ESP_IDF_TOOL\\tools\\riscv32-esp-elf\\esp-13.2.0_20230928\\riscv32-esp-elf\\bin;d:\\ESP_IDF_TOOL\\tools\\esp32ulp-elf\\2.35_20220830\\esp32ulp-elf\\bin;d:\\ESP_IDF_TOOL\\tools\\cmake\\3.24.0\\bin;d:\\ESP_IDF_TOOL\\tools\\openocd-esp32\\v0.12.0-esp32-20230921\\openocd-esp32\\bin;d:\\ESP_IDF_TOOL\\tools\\ninja\\1.11.1;d:\\ESP_IDF_TOOL\\tools\\idf-exe\\1.0.3;d:\\ESP_IDF_TOOL\\tools\\ccache\\4.8\\ccache-4.8-windows-x86_64;d:\\ESP_IDF_TOOL\\tools\\dfu-util\\0.11\\dfu-util-0.11-win64;d:\\ESP_IDF_TOOL\\tools\\esp-rom-elfs\\20230320",
+    "idf.customExtraVars": {
+        "OPENOCD_SCRIPTS": "d:\\ESP_IDF_TOOL\\tools\\openocd-esp32\\v0.12.0-esp32-20230921/openocd-esp32/share/openocd/scripts",
+        "IDF_CCACHE_ENABLE": "1",
+        "ESP_ROM_ELF_DIR": "d:\\ESP_IDF_TOOL\\tools\\esp-rom-elfs\\20230320/"
+    },
+    "idf.espIdfPathWin": "C:\\Users\\clash\\esp\\v5.2.1\\esp-idf",
+    "idf.openOcdConfigs": [
+        "interface/ftdi/esp32_devkitj_v1.cfg",
+        "target/esp32.cfg"
+    ],
+    "idf.portWin": "COM4",
+    "idf.pythonBinPathWin": "d:\\ESP_IDF_TOOL\\python_env\\idf5.2_py3.11_env\\Scripts\\python.exe",
+    "idf.toolsPathWin": "d:\\ESP_IDF_TOOL",
+    "idf.flashType": "UART",
+    "files.associations": {
+        "gpio.h": "c",
+        "esp_log.h": "c",
+        "string.h": "c",
+        "esp_http_server.h": "c",
+        "err.h": "c",
+        "stdio.h": "c",
+        "freertos.h": "c",
+        "water_timer.h": "c",
+        "chrono": "c",
+        "ecdsa_alt.h": "c",
+        "esp_crt_bundle.h": "c"
+    }
+}
