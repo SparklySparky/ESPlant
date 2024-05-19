@@ -1,32 +1,49 @@
-# _Sample project_
+# ESPlant 🌱
 
-(See the README.md file in the upper level 'examples' directory for more information about examples.)
+**ESPlant** automates plant watering using ESP32 and lets you monitor everything via an Android app. Keep your plants happy and hydrated effortlessly!
 
-This is the simplest buildable example. The example is used by command `idf.py create-project`
-that copies the project to user specified path and set it's name. For more information follow the [docs page](https://docs.espressif.com/projects/esp-idf/en/latest/api-guides/build-system.html#start-a-new-project)
+## Features
 
+- **Automated Watering**: Set and forget watering schedules.
+- **Remote Monitoring**: Check status and timers on your Android device.
+- **WiFi Connectivity**: Easy setup and control through your home network.
+- **Real-Time Updates**: Get real-time data on watering schedules.
 
+## Quick Start
 
-## How to use example
-We encourage the users to use the example as a template for the new projects.
-A recommended way is to follow the instructions on a [docs page](https://docs.espressif.com/projects/esp-idf/en/latest/api-guides/build-system.html#start-a-new-project).
+### Hardware Setup
 
-## Example folder contents
+1. **ESP32 Microcontroller**: Connects and controls the water pump.
+2. **Water Pump/Valve**: Manages the water flow to your plants.
+3. **WiFi Connection**: Connect ESP32 to your home WiFi.
 
-The project **sample_project** contains one source file in C language [main.c](main/main.c). The file is located in folder [main](main).
+### Android App
 
-ESP-IDF projects are built using CMake. The project build configuration is contained in `CMakeLists.txt`
-files that provide set of directives and instructions describing the project's source files and targets
-(executable, library, or both). 
+- **Monitor & Control**: Check and adjust watering schedules from your phone.
+- **Notifications**: Get alerts when watering starts or stops.
 
-Below is short explanation of remaining files in the project folder.
+## Installation
 
-```
-├── CMakeLists.txt
-├── main
-│   ├── CMakeLists.txt
-│   └── main.c
-└── README.md                  This is the file you are currently reading
-```
-Additionally, the sample project contains Makefile and component.mk files, used for the legacy Make based build system. 
-They are not used or needed when building with CMake and idf.py.
+1. **Clone the Repo**:
+    ```bash
+    git clone https://github.com/yourusername/ESPlant.git
+    ```
+2. **Configure WiFi**: Update `CONFIG_ESP_WIFI_SSID` and `CONFIG_ESP_WIFI_PASSWORD` in the code.
+3. **Build & Flash**:
+    ```bash
+    idf.py build
+    idf.py flash
+    ```
+4. **Android App**: Install and connect to ESP32.
+
+## Contributing
+
+Fork the repo, make changes, and submit a pull request.
+
+## License
+
+Licensed under the MIT License.
+
+---
+
+Enjoy stress-free plant care with **ESPlant**! For questions or support, open an issue on GitHub. Happy gardening! 🌿
