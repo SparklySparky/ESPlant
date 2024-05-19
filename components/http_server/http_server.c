@@ -11,6 +11,7 @@
 #include "lwip/sys.h"
 #include "lwip/ip_addr.h"
 #include "driver/gpio.h"
+#include <stdlib.h>
 #include "esp_http_client.h"
 #include <water_timer.h>
 #include <esp_http_server.h>
@@ -34,6 +35,8 @@ static EventGroupHandle_t s_wifi_event_group;
 
 static int s_retry_num = 0;
 
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
+
 esp_err_t get_handler(httpd_req_t *req) {
     
     const char response[] = "Pinged Back From ESP-Plant";
@@ -45,36 +48,24 @@ esp_err_t get_handler(httpd_req_t *req) {
     return ESP_OK;
 }
 
-esp_err_t get_time_left_handler(httpd_req_t *req) {
-    char response_buffer[30];
-
-    snprintf(response_buffer, sizeof(response_buffer), "%" PRIu64, time_remaining);
-
-    httpd_resp_send(req, response_buffer, HTTPD_RESP_USE_STRLEN);
-
-    ESP_LOGI(TAG, "Get Time REQUESTED: %s", response_buffer);
-
-    return ESP_OK;
-}
-
-esp_err_t get_timer_interval_handler(httpd_req_t *req) {
-    char response_buffer[30];
-
-    snprintf(response_buffer, sizeof(response_buffer), "%" PRIu64, timer_interval);
-
-    httpd_resp_send(req, response_buffer, HTTPD_RESP_USE_STRLEN);
-
-    ESP_LOGI(TAG, "Get Timer Interval REQUESTED: %s", response_buffer);
-
-    return ESP_OK;
-}
-
 httpd_uri_t uri_get = {
     .uri      = "/",
     .method   = HTTP_GET,
     .handler  = get_handler,
     .user_ctx = NULL
 };
+
+esp_err_t get_time_left_handler(httpd_req_t *req) {
+    char response_buffer[30];
+
+    snprintf(response_buffer, sizeof(response_buffer), "%" PRIu64, time_left);
+
+    httpd_resp_send(req, response_buffer, HTTPD_RESP_USE_STRLEN);
+
+    ESP_LOGI(TAG, "Get Time Left REQUESTED: %s", response_buffer);
+
+    return ESP_OK;
+}
 
 httpd_uri_t uri_get_time_left = {
     .uri      = "/time_left",
@@ -83,12 +74,51 @@ httpd_uri_t uri_get_time_left = {
     .user_ctx = NULL
 };
 
-httpd_uri_t uri_get_timer_interval = {
-    .uri      = "/timer_interval",
+esp_err_t get_watering_interval_handler(httpd_req_t *req) {
+    char response_buffer[30];
+
+    snprintf(response_buffer, sizeof(response_buffer), "%" PRIu64, watering_interval);
+
+    httpd_resp_send(req, response_buffer, HTTPD_RESP_USE_STRLEN);
+
+    ESP_LOGI(TAG, "Get Watering Interval REQUESTED: %s", response_buffer);
+
+    return ESP_OK;
+}
+
+httpd_uri_t uri_get_watering_interval = {
+    .uri      = "/watering_interval",
     .method   = HTTP_GET,
-    .handler  = get_timer_interval_handler,
+    .handler  = get_watering_interval_handler,
     .user_ctx = NULL
 };
+
+esp_err_t post_update_watering_interval_handler(httpd_req_t *req)
+{
+    char buf[100];
+    int ret, remaining = req->content_len;
+
+    while (remaining > 0) {
+        if ((ret = httpd_req_recv(req, buf, MIN(remaining, sizeof(buf)))) <= 0) {
+            if (ret == HTTPD_SOCK_ERR_TIMEOUT) {
+                continue;
+            }
+            return ESP_FAIL;
+        }
+        httpd_resp_send_chunk(req, buf, ret);
+        remaining -= ret;
+    }
+    httpd_resp_send_chunk(req, NULL, 0);
+    return ESP_OK;
+};
+
+httpd_uri_t uri_post_update_watering_interval = {
+    .uri      = "/watering_interval",
+    .method   = HTTP_POST,
+    .handler  = post_update_watering_interval_handler,
+    .user_ctx = NULL
+};
+
 
 httpd_handle_t setup_server(void)
 {
@@ -98,11 +128,13 @@ httpd_handle_t setup_server(void)
     if (httpd_start(&server, &config) == ESP_OK) {
         httpd_register_uri_handler(server, &uri_get);
         httpd_register_uri_handler(server, &uri_get_time_left);
-        httpd_register_uri_handler(server, &uri_get_timer_interval);
+        httpd_register_uri_handler(server, &uri_get_watering_interval);
+        httpd_register_uri_handler(server, &uri_post_update_watering_interval);
     }
 
     return server;
 }
+
 
 static void wifi_event_handler(void* arg, esp_event_base_t event_base,
                                     int32_t event_id, void* event_data)

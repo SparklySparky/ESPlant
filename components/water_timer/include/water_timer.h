@@ -1,4 +1,4 @@
 void initialize_water_timer(void);
 
-extern uint64_t time_remaining;
-extern uint64_t timer_interval;
+extern uint64_t time_left;
+extern uint64_t watering_interval;

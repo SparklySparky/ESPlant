@@ -18,9 +18,10 @@ TaskHandle_t time_left_calc_handle;
 
 uint64_t start_time = 0;
 uint64_t current_time = 0;
-uint64_t time_remaining = 0;
+uint64_t time_left = 0;
 
-uint64_t timer_interval = 20 * 1000000;
+uint64_t watering_interval = 20 * 1000000;
+
 bool watering_active = false;
 
 void initialize_water_timer(void)
@@ -34,7 +35,7 @@ void initialize_water_timer(void)
 
     ESP_ERROR_CHECK(esp_timer_create(&watering_timer_args, &watering_timer));
 
-    ESP_ERROR_CHECK(esp_timer_start_periodic(watering_timer, timer_interval));
+    ESP_ERROR_CHECK(esp_timer_start_periodic(watering_timer, watering_interval));
 
     start_time = esp_timer_get_time();
 
@@ -63,7 +64,7 @@ void watering_task(void* arg)
     };
 
     ESP_ERROR_CHECK(esp_timer_create(&stop_watering_timer_args, &stop_watering_timer));
-    ESP_ERROR_CHECK(esp_timer_start_once(stop_watering_timer, 5000000)); // 5 seconds in microseconds
+    ESP_ERROR_CHECK(esp_timer_start_once(stop_watering_timer, 5000000));
 }
 
 void stop_watering_callback(void* arg)
@@ -78,9 +79,9 @@ void calculate_time_left(void)
     {   
         current_time = esp_timer_get_time();
 
-        time_remaining = ((start_time + timer_interval) - current_time) / 1000000;
+        time_left = ((start_time + watering_interval) - current_time) / 1000000;
 
-        ESP_LOGI(TAG, "%llu sec", time_remaining);
+        ESP_LOGI(TAG, "%llu sec", time_left);
 
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
