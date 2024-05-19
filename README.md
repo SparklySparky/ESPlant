@@ -26,7 +26,7 @@
 
 1. **Clone the Repo**:
     ```bash
-    git clone https://github.com/yourusername/ESPlant.git
+    git clone https://github.com/SparklySparky/ESPlant.git
     ```
 2. **Configure WiFi**: Update `CONFIG_ESP_WIFI_SSID` and `CONFIG_ESP_WIFI_PASSWORD` in the code.
 3. **Build & Flash**:
