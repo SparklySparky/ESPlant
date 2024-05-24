@@ -16,35 +16,33 @@
 #include <water_timer.h>
 #include <esp_http_server.h>
 
-#define WIFI_SSID		CONFIG_ESP_WIFI_SSID
-#define WIFI_PASSWORD	CONFIG_ESP_WIFI_PASSWORD
-#define WIFI_CHANNEL	CONFIG_ESP_WIFI_CHANNEL
-#define WIFI_MAX_STA	CONFIG_ESP_MAX_STA_CONN
+
+#define WIFI_SSID       CONFIG_ESP_WIFI_SSID
+#define WIFI_PASSWORD   CONFIG_ESP_WIFI_PASSWORD
+#define WIFI_CHANNEL    CONFIG_ESP_WIFI_CHANNEL
+#define WIFI_MAX_STA    CONFIG_ESP_MAX_STA_CONN
 #define WIFI_MAX_RETRY  CONFIG_ESP_MAXIMUM_RETRY
-
-static const char *TAG = "Http Server";
-
-/* FreeRTOS event group to signal when we are connected*/
-static EventGroupHandle_t s_wifi_event_group;
-
-/* The event group allows multiple bits for each event, but we only care about two events:
- * - we are connected to the AP with an IP
- * - we failed to connect after the maximum amount of retries */
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT      BIT1
-
-static int s_retry_num = 0;
+#define INTERVAL_MULTIPLIER 1000000
+#define WATERING_DURATION_MULTIPLIER 1000
 
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 
+static const char *TAG = "Http Server";
+
+/* FreeRTOS event group to signal when we are connected */
+static EventGroupHandle_t s_wifi_event_group;
+
+
+static int s_retry_num = 0;
+uint64_t watering_interval = 20 * INTERVAL_MULTIPLIER;
+uint16_t watering_duration = 5 * WATERING_DURATION_MULTIPLIER;
+
 esp_err_t get_handler(httpd_req_t *req) {
-    
     const char response[] = "Pinged Back From ESP-Plant";
-
     httpd_resp_send(req, response, HTTPD_RESP_USE_STRLEN);
-
     ESP_LOGI(TAG, "Status REQUESTED: %s", response);
-
     return ESP_OK;
 }
 
@@ -57,13 +55,9 @@ httpd_uri_t uri_get = {
 
 esp_err_t get_time_left_handler(httpd_req_t *req) {
     char response_buffer[30];
-
     snprintf(response_buffer, sizeof(response_buffer), "%" PRIu64, time_left);
-
     httpd_resp_send(req, response_buffer, HTTPD_RESP_USE_STRLEN);
-
     ESP_LOGI(TAG, "Get Time Left REQUESTED: %s", response_buffer);
-
     return ESP_OK;
 }
 
@@ -76,13 +70,9 @@ httpd_uri_t uri_get_time_left = {
 
 esp_err_t get_watering_interval_handler(httpd_req_t *req) {
     char response_buffer[30];
-
     snprintf(response_buffer, sizeof(response_buffer), "%" PRIu64, watering_interval);
-
     httpd_resp_send(req, response_buffer, HTTPD_RESP_USE_STRLEN);
-
     ESP_LOGI(TAG, "Get Watering Interval REQUESTED: %s", response_buffer);
-
     return ESP_OK;
 }
 
@@ -93,35 +83,69 @@ httpd_uri_t uri_get_watering_interval = {
     .user_ctx = NULL
 };
 
-esp_err_t post_update_watering_interval_handler(httpd_req_t *req)
-{
+esp_err_t post_update_data_handler(httpd_req_t *req) {
     char buf[100];
     int ret, remaining = req->content_len;
 
     while (remaining > 0) {
-        if ((ret = httpd_req_recv(req, buf, MIN(remaining, sizeof(buf)))) <= 0) {
+        if ((ret = httpd_req_recv(req, buf,
+                        MIN(remaining, sizeof(buf)))) <= 0) {
             if (ret == HTTPD_SOCK_ERR_TIMEOUT) {
+                /* Retry receiving if timeout occurred */
                 continue;
             }
             return ESP_FAIL;
         }
+
         httpd_resp_send_chunk(req, buf, ret);
         remaining -= ret;
     }
+
+    char *ptr;
+
+    long int new_watering_interval = strtol(buf, &ptr, 10);
+    
+    watering_interval = new_watering_interval * INTERVAL_MULTIPLIER;
+    
+    nvs_handle_t nvs_write_strg_handle;
+    esp_err_t err = nvs_open("dataStrg", NVS_READWRITE, &nvs_write_strg_handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Error (%s) opening NVS handle!", esp_err_to_name(err));
+        httpd_resp_sendstr(req, "Failed to open NVS handle");
+        return ESP_FAIL;
+    }
+
+    err = nvs_set_u16(nvs_write_strg_handle, "waterIntrv", new_watering_interval);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to set NVS value! Error: %s", esp_err_to_name(err));
+        nvs_close(nvs_write_strg_handle);
+        httpd_resp_sendstr(req, "Failed to set NVS value");
+        return ESP_FAIL;
+    }
+
+    err = nvs_commit(nvs_write_strg_handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to commit NVS! Error: %s", esp_err_to_name(err));
+        nvs_close(nvs_write_strg_handle);
+        httpd_resp_sendstr(req, "Failed to commit NVS");
+        return ESP_FAIL;
+    }
+
+    nvs_close(nvs_write_strg_handle);
+
+    ESP_LOGI(TAG, "Updated watering interval to %" PRIu64, watering_interval);
     httpd_resp_send_chunk(req, NULL, 0);
     return ESP_OK;
-};
+}
 
-httpd_uri_t uri_post_update_watering_interval = {
+httpd_uri_t uri_post_update_data = {
     .uri      = "/watering_interval",
     .method   = HTTP_POST,
-    .handler  = post_update_watering_interval_handler,
+    .handler  = post_update_data_handler,
     .user_ctx = NULL
 };
 
-
-httpd_handle_t setup_server(void)
-{
+httpd_handle_t setup_server(void) {
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     httpd_handle_t server = NULL;
 
@@ -129,16 +153,14 @@ httpd_handle_t setup_server(void)
         httpd_register_uri_handler(server, &uri_get);
         httpd_register_uri_handler(server, &uri_get_time_left);
         httpd_register_uri_handler(server, &uri_get_watering_interval);
-        httpd_register_uri_handler(server, &uri_post_update_watering_interval);
+        httpd_register_uri_handler(server, &uri_post_update_data);
     }
 
     return server;
 }
 
-
 static void wifi_event_handler(void* arg, esp_event_base_t event_base,
-                                    int32_t event_id, void* event_data)
-{
+                                    int32_t event_id, void* event_data) {
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
         esp_wifi_connect();
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
@@ -158,8 +180,7 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base,
     }
 }
 
-void setup_wifi(void)
-{   
+void setup_wifi(void) {   
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_ERROR_CHECK(nvs_flash_erase());
@@ -202,16 +223,12 @@ void setup_wifi(void)
 
     ESP_LOGI(TAG, "wifi_init_sta finished.");
 
-    /* Waiting until either the connection is established (WIFI_CONNECTED_BIT) or connection failed for the maximum
-     * number of re-tries (WIFI_FAIL_BIT). The bits are set by event_handler() (see above) */
     EventBits_t bits = xEventGroupWaitBits(s_wifi_event_group,
             WIFI_CONNECTED_BIT | WIFI_FAIL_BIT,
             pdFALSE,
             pdFALSE,
             portMAX_DELAY);
 
-    /* xEventGroupWaitBits() returns the bits before the call returned, hence we can test which event actually
-     * happened. */
     if (bits & WIFI_CONNECTED_BIT) {
         ESP_LOGI(TAG, "connected to ap SSID:%s password:%s",
                  WIFI_SSID, WIFI_PASSWORD);
@@ -220,5 +237,26 @@ void setup_wifi(void)
                  WIFI_SSID, WIFI_PASSWORD);
     } else {
         ESP_LOGE(TAG, "UNEXPECTED EVENT");
+    }
+
+    nvs_handle_t nvs_read_strg_handle;
+    ret = nvs_open("dataStrg", NVS_READWRITE, &nvs_read_strg_handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Error (%s) opening NVS handle!", esp_err_to_name(ret));
+    } else {
+        uint16_t stored_interval = 0;
+        ret = nvs_get_u16(nvs_read_strg_handle, "waterIntrv", &stored_interval);
+        switch (ret) {
+            case ESP_OK:
+                watering_interval = stored_interval * INTERVAL_MULTIPLIER;
+                ESP_LOGI(TAG, "Stored watering interval: %" PRIu64, watering_interval);
+                break;
+            case ESP_ERR_NVS_NOT_FOUND:
+                ESP_LOGI(TAG, "No stored watering interval found, using default.");
+                break;
+            default:
+                ESP_LOGE(TAG, "Error (%s) reading!", esp_err_to_name(ret));
+        }
+        nvs_close(nvs_read_strg_handle);
     }
 }
