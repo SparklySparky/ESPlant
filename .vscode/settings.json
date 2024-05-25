@@ -27,6 +27,7 @@
         "water_timer.h": "c",
         "chrono": "c",
         "ecdsa_alt.h": "c",
-        "esp_crt_bundle.h": "c"
+        "esp_crt_bundle.h": "c",
+        "random": "c"
     }
 }

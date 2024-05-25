@@ -15,7 +15,6 @@ void calculate_time_left(void);
 static const char *TAG = "Water Timer";
 
 esp_timer_handle_t watering_timer;
-esp_timer_handle_t stop_watering_timer;
 
 TaskHandle_t time_left_calc_handle;
 
@@ -25,6 +24,7 @@ uint64_t time_left = 0;
 
 void initialize_water_timer(void)
 {   
+
     gpio_set_direction(HOSE_PIN, GPIO_MODE_OUTPUT);
 
     const esp_timer_create_args_t watering_timer_args = {
@@ -71,4 +71,13 @@ void calculate_time_left(void)
 
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
+}
+
+void stop_timers(void)
+{
+    vTaskDelete(time_left_calc_handle);
+
+    esp_timer_stop(watering_timer);
+
+    esp_timer_delete(watering_timer);
 }

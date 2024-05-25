@@ -1,5 +1,4 @@
 #include <stdio.h>
-
 #include <http_server.h>
 #include <water_timer.h>
 

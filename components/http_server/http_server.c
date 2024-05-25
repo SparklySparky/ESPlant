@@ -12,6 +12,7 @@
 #include "lwip/ip_addr.h"
 #include "driver/gpio.h"
 #include <stdlib.h>
+#include <cJSON.h>
 #include "esp_http_client.h"
 #include <water_timer.h>
 #include <esp_http_server.h>
@@ -84,6 +85,9 @@ httpd_uri_t uri_get_watering_interval = {
 };
 
 esp_err_t post_update_data_handler(httpd_req_t *req) {
+
+    stop_timers();
+
     char buf[100];
     int ret, remaining = req->content_len;
 
@@ -101,12 +105,19 @@ esp_err_t post_update_data_handler(httpd_req_t *req) {
         remaining -= ret;
     }
 
+    cJSON *response = cJSON_Parse(buf);
+
+    cJSON *data_interval = cJSON_GetObjectItem(response, "Watering_Interval");
+    cJSON *data_duration = cJSON_GetObjectItem(response, "Watering_Duration");
+
     char *ptr;
 
-    long int new_watering_interval = strtol(buf, &ptr, 10);
+    long int new_watering_interval = strtol(cJSON_GetStringValue(data_interval), &ptr, 10);
+    long int new_watering_duration = strtol(cJSON_GetStringValue(data_duration), &ptr, 10);
     
     watering_interval = new_watering_interval * INTERVAL_MULTIPLIER;
-    
+    watering_duration = new_watering_duration * WATERING_DURATION_MULTIPLIER;
+
     nvs_handle_t nvs_write_strg_handle;
     esp_err_t err = nvs_open("dataStrg", NVS_READWRITE, &nvs_write_strg_handle);
     if (err != ESP_OK) {
@@ -116,6 +127,14 @@ esp_err_t post_update_data_handler(httpd_req_t *req) {
     }
 
     err = nvs_set_u16(nvs_write_strg_handle, "waterIntrv", new_watering_interval);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to set NVS value! Error: %s", esp_err_to_name(err));
+        nvs_close(nvs_write_strg_handle);
+        httpd_resp_sendstr(req, "Failed to set NVS value");
+        return ESP_FAIL;
+    }
+
+    err = nvs_set_u16(nvs_write_strg_handle, "waterDurat", new_watering_duration);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to set NVS value! Error: %s", esp_err_to_name(err));
         nvs_close(nvs_write_strg_handle);
@@ -134,12 +153,17 @@ esp_err_t post_update_data_handler(httpd_req_t *req) {
     nvs_close(nvs_write_strg_handle);
 
     ESP_LOGI(TAG, "Updated watering interval to %" PRIu64, watering_interval);
+    ESP_LOGI(TAG, "Updated watering duration to %" PRIu16, watering_duration);
+
     httpd_resp_send_chunk(req, NULL, 0);
+
+    initialize_water_timer();
+
     return ESP_OK;
 }
 
 httpd_uri_t uri_post_update_data = {
-    .uri      = "/watering_interval",
+    .uri      = "/update_data",
     .method   = HTTP_POST,
     .handler  = post_update_data_handler,
     .user_ctx = NULL
@@ -244,15 +268,29 @@ void setup_wifi(void) {
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Error (%s) opening NVS handle!", esp_err_to_name(ret));
     } else {
-        uint16_t stored_interval = 0;
-        ret = nvs_get_u16(nvs_read_strg_handle, "waterIntrv", &stored_interval);
+        uint16_t stored_watering_intrv = 0;
+        ret = nvs_get_u16(nvs_read_strg_handle, "waterIntrv", &stored_watering_intrv);
         switch (ret) {
             case ESP_OK:
-                watering_interval = stored_interval * INTERVAL_MULTIPLIER;
+                watering_interval = stored_watering_intrv * INTERVAL_MULTIPLIER;
                 ESP_LOGI(TAG, "Stored watering interval: %" PRIu64, watering_interval);
                 break;
             case ESP_ERR_NVS_NOT_FOUND:
                 ESP_LOGI(TAG, "No stored watering interval found, using default.");
+                break;
+            default:
+                ESP_LOGE(TAG, "Error (%s) reading!", esp_err_to_name(ret));
+        }
+
+        uint16_t stored_watering_duration = 0;
+        ret = nvs_get_u16(nvs_read_strg_handle, "waterDurat", &stored_watering_duration);
+        switch (ret) {
+            case ESP_OK:
+                watering_duration = stored_watering_duration * WATERING_DURATION_MULTIPLIER;
+                ESP_LOGI(TAG, "Stored watering duration: %" PRIu16, watering_duration);
+                break;
+            case ESP_ERR_NVS_NOT_FOUND:
+                ESP_LOGI(TAG, "No stored watering duration found, using default.");
                 break;
             default:
                 ESP_LOGE(TAG, "Error (%s) reading!", esp_err_to_name(ret));
