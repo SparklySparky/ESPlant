@@ -13,6 +13,9 @@
 #include "driver/gpio.h"
 #include <stdlib.h>
 #include <cJSON.h>
+#include "esp_tls.h"
+#include "esp_sntp.h"
+#include "esp_netif.h"
 #include "esp_http_client.h"
 #include <water_timer.h>
 #include <esp_http_server.h>
@@ -23,22 +26,115 @@
 #define WIFI_CHANNEL    CONFIG_ESP_WIFI_CHANNEL
 #define WIFI_MAX_STA    CONFIG_ESP_MAX_STA_CONN
 #define WIFI_MAX_RETRY  CONFIG_ESP_MAXIMUM_RETRY
+
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT      BIT1
+
 #define INTERVAL_MULTIPLIER 1000000
 #define WATERING_DURATION_MULTIPLIER 1000
 
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 
-static const char *TAG = "Http Server";
+#define MAX_HTTP_OUTPUT_BUFFER 2048
 
-/* FreeRTOS event group to signal when we are connected */
+static const char *TAG = "Http Server";
+static char output_buffer[MAX_HTTP_OUTPUT_BUFFER];
+static int output_len = 0;
+static int s_retry_num = 0;
+
 static EventGroupHandle_t s_wifi_event_group;
 
-
-static int s_retry_num = 0;
 uint64_t watering_interval = 20 * INTERVAL_MULTIPLIER;
 uint16_t watering_duration = 5 * WATERING_DURATION_MULTIPLIER;
+
+esp_err_t _http_event_handler(esp_http_client_event_t *evt)
+{
+    switch(evt->event_id) {
+        case HTTP_EVENT_ERROR:
+            ESP_LOGD(TAG, "HTTP_EVENT_ERROR");
+            break;
+        case HTTP_EVENT_ON_CONNECTED:
+            ESP_LOGD(TAG, "HTTP_EVENT_ON_CONNECTED");
+            break;
+        case HTTP_EVENT_HEADER_SENT:
+            ESP_LOGD(TAG, "HTTP_EVENT_HEADER_SENT");
+            break;
+        case HTTP_EVENT_ON_HEADER:
+            ESP_LOGD(TAG, "HTTP_EVENT_ON_HEADER, key=%s, value=%s", evt->header_key, evt->header_value);
+            break;
+        case HTTP_EVENT_ON_DATA:
+            ESP_LOGD(TAG, "HTTP_EVENT_ON_DATA, len=%d", evt->data_len);
+            if (output_len == 0) {
+                // Clean the buffer in case of a new request
+                memset(output_buffer, 0, MAX_HTTP_OUTPUT_BUFFER);
+            }
+            if (!esp_http_client_is_chunked_response(evt->client)) {
+                int copy_len = MIN(evt->data_len, (MAX_HTTP_OUTPUT_BUFFER - output_len));
+                if (copy_len) {
+                    memcpy(output_buffer + output_len, evt->data, copy_len);
+                    output_len += copy_len;
+                }
+            }
+            break;
+        case HTTP_EVENT_ON_FINISH:
+            ESP_LOGD(TAG, "HTTP_EVENT_ON_FINISH");
+            output_buffer[output_len] = '\0';  // Null-terminate the buffer
+            ESP_LOGI(TAG, "HTTP Response: %s", output_buffer);
+            output_len = 0;
+
+            cJSON *response = cJSON_Parse(output_buffer);
+            if (response == NULL) {
+                ESP_LOGE(TAG, "Failed to parse JSON response");
+                break;
+            }
+
+            cJSON *datetime = cJSON_GetObjectItem(response, "datetime");
+            if (datetime == NULL) {
+                ESP_LOGE(TAG, "Failed to get 'datetime' from JSON response");
+                cJSON_Delete(response);
+                break;
+            }
+
+            cJSON *response_timezone = cJSON_GetObjectItem(response, "abbreviation");
+            if (response_timezone == NULL) {
+                ESP_LOGE(TAG, "Failed to get 'abbreviation' from JSON response");
+                cJSON_Delete(response);
+                break;
+            }
+
+            struct tm tm;
+            strptime(cJSON_GetStringValue(datetime), "%Y-%m-%dT%H:%M:%S", &tm);
+
+            time_t t = mktime(&tm);
+            struct timeval tv = { .tv_sec = t, .tv_usec = 0 };
+            settimeofday(&tv, NULL);
+
+            setenv("TZ", cJSON_GetStringValue(response_timezone), 1);
+            tzset();
+            
+            ESP_LOGI(TAG, "RTC updated to: %s", cJSON_GetStringValue(datetime));
+
+            cJSON_Delete(response);
+            break;
+        case HTTP_EVENT_DISCONNECTED:
+            ESP_LOGI(TAG, "HTTP_EVENT_DISCONNECTED");
+            int mbedtls_err = 0;
+            esp_err_t err = esp_tls_get_and_clear_last_error((esp_tls_error_handle_t)evt->data, &mbedtls_err, NULL);
+            if (err != 0) {
+                ESP_LOGI(TAG, "Last esp error code: 0x%x", err);
+                ESP_LOGI(TAG, "Last mbedtls failure: 0x%x", mbedtls_err);
+            }
+            output_len = 0;
+            break;
+        case HTTP_EVENT_REDIRECT:
+            ESP_LOGD(TAG, "HTTP_EVENT_REDIRECT");
+            esp_http_client_set_header(evt->client, "From", "user@example.com");
+            esp_http_client_set_header(evt->client, "Accept", "text/html");
+            esp_http_client_set_redirection(evt->client);
+            break;
+    }
+    return ESP_OK;
+}
 
 esp_err_t get_handler(httpd_req_t *req) {
     const char response[] = "Pinged Back From ESP-Plant";
@@ -297,4 +393,24 @@ void setup_wifi(void) {
         }
         nvs_close(nvs_read_strg_handle);
     }
+
+    esp_http_client_config_t config = {
+        .host = "worldtimeapi.org",
+        .path = "/api/timezone/Europe/Rome",
+        .transport_type = HTTP_TRANSPORT_OVER_TCP,
+        .event_handler = _http_event_handler,
+        .user_data = output_buffer,  // Pass the buffer to the event handler
+    };
+    esp_http_client_handle_t client = esp_http_client_init(&config);
+
+    esp_err_t err = esp_http_client_perform(client);
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "HTTP GET Status = %d, content_length = %"PRId64,
+                 esp_http_client_get_status_code(client),
+                 esp_http_client_get_content_length(client));
+    } else {
+        ESP_LOGE(TAG, "HTTP GET request failed: %s", esp_err_to_name(err));
+    }
+
+    esp_http_client_cleanup(client);
 }

@@ -5,6 +5,9 @@
 #include <freertos/task.h>
 #include <esp_log.h>
 #include <http_server.h>
+#include "esp_tls.h"
+#include "esp_sntp.h"
+#include "esp_netif.h"
 #include <water_timer.h>
 
 #define HOSE_PIN GPIO_NUM_26
@@ -46,6 +49,16 @@ void initialize_water_timer(void)
                 1,
                 &time_left_calc_handle
             );
+
+    time_t now;
+    char strftime_buf[64];
+    struct tm timeinfo;
+    
+    time(&now);
+    localtime_r(&now, &timeinfo);
+    strftime(strftime_buf, sizeof(strftime_buf), "%c", &timeinfo);
+    
+    ESP_LOGI(TAG, "The current date/time in Rome is: %s", strftime_buf);
 }
 
 void watering_task(void* arg)
