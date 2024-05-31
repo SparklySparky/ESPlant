@@ -45,11 +45,10 @@ static int s_retry_num = 0;
 static EventGroupHandle_t s_wifi_event_group;
 
 uint64_t watering_interval = 20 * INTERVAL_MULTIPLIER;
-uint16_t watering_duration = 5 * WATERING_DURATION_MULTIPLIER;
+uint64_t watering_duration = 5 * WATERING_DURATION_MULTIPLIER;
 
-esp_err_t _http_event_handler(esp_http_client_event_t *evt)
-{
-    switch(evt->event_id) {
+esp_err_t _http_event_handler(esp_http_client_event_t *evt) {
+    switch (evt->event_id) {
         case HTTP_EVENT_ERROR:
             ESP_LOGD(TAG, "HTTP_EVENT_ERROR");
             break;
@@ -68,12 +67,11 @@ esp_err_t _http_event_handler(esp_http_client_event_t *evt)
                 // Clean the buffer in case of a new request
                 memset(output_buffer, 0, MAX_HTTP_OUTPUT_BUFFER);
             }
-            if (!esp_http_client_is_chunked_response(evt->client)) {
-                int copy_len = MIN(evt->data_len, (MAX_HTTP_OUTPUT_BUFFER - output_len));
-                if (copy_len) {
-                    memcpy(output_buffer + output_len, evt->data, copy_len);
-                    output_len += copy_len;
-                }
+            if (evt->data_len + output_len < MAX_HTTP_OUTPUT_BUFFER) {
+                memcpy(output_buffer + output_len, evt->data, evt->data_len);
+                output_len += evt->data_len;
+            } else {
+                ESP_LOGW(TAG, "Buffer overflow, truncating response data");
             }
             break;
         case HTTP_EVENT_ON_FINISH:
@@ -88,31 +86,39 @@ esp_err_t _http_event_handler(esp_http_client_event_t *evt)
                 break;
             }
 
-            cJSON *datetime = cJSON_GetObjectItem(response, "datetime");
+            cJSON *datetime = cJSON_GetObjectItem(response, "dateTime");
             if (datetime == NULL) {
-                ESP_LOGE(TAG, "Failed to get 'datetime' from JSON response");
-                cJSON_Delete(response);
-                break;
-            }
-
-            cJSON *response_timezone = cJSON_GetObjectItem(response, "abbreviation");
-            if (response_timezone == NULL) {
-                ESP_LOGE(TAG, "Failed to get 'abbreviation' from JSON response");
+                ESP_LOGE(TAG, "Failed to get 'dateTime' from JSON response");
                 cJSON_Delete(response);
                 break;
             }
 
             struct tm tm;
-            strptime(cJSON_GetStringValue(datetime), "%Y-%m-%dT%H:%M:%S", &tm);
+            memset(&tm, 0, sizeof(struct tm));
+            const char *datetime_str = cJSON_GetStringValue(datetime);
+            if (strptime(datetime_str, "%Y-%m-%dT%H:%M:%S", &tm) == NULL) {
+                ESP_LOGE(TAG, "Failed to parse dateTime string: %s", datetime_str);
+                cJSON_Delete(response);
+                break;
+            }
 
             time_t t = mktime(&tm);
             struct timeval tv = { .tv_sec = t, .tv_usec = 0 };
             settimeofday(&tv, NULL);
 
-            setenv("TZ", cJSON_GetStringValue(response_timezone), 1);
+            ESP_LOGI(TAG, "RTC updated to: %s", datetime_str);
+
+            setenv("TZ", "CEST", 1);
             tzset();
-            
-            ESP_LOGI(TAG, "RTC updated to: %s", cJSON_GetStringValue(datetime));
+
+            time_t now;
+            char strftime_buf[64];
+            struct tm timeinfo;
+
+            time(&now);
+            localtime_r(&now, &timeinfo);
+            strftime(strftime_buf, sizeof(strftime_buf), "%c", &timeinfo);
+            ESP_LOGI(TAG, "The current date/time in Rome is: %s", strftime_buf);
 
             cJSON_Delete(response);
             break;
@@ -222,7 +228,7 @@ esp_err_t post_update_data_handler(httpd_req_t *req) {
         return ESP_FAIL;
     }
 
-    err = nvs_set_u16(nvs_write_strg_handle, "waterIntrv", new_watering_interval);
+    err = nvs_set_u64(nvs_write_strg_handle, "waterIntrv", new_watering_interval);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to set NVS value! Error: %s", esp_err_to_name(err));
         nvs_close(nvs_write_strg_handle);
@@ -230,7 +236,7 @@ esp_err_t post_update_data_handler(httpd_req_t *req) {
         return ESP_FAIL;
     }
 
-    err = nvs_set_u16(nvs_write_strg_handle, "waterDurat", new_watering_duration);
+    err = nvs_set_u64(nvs_write_strg_handle, "waterDurat", new_watering_duration);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to set NVS value! Error: %s", esp_err_to_name(err));
         nvs_close(nvs_write_strg_handle);
@@ -249,7 +255,7 @@ esp_err_t post_update_data_handler(httpd_req_t *req) {
     nvs_close(nvs_write_strg_handle);
 
     ESP_LOGI(TAG, "Updated watering interval to %" PRIu64, watering_interval);
-    ESP_LOGI(TAG, "Updated watering duration to %" PRIu16, watering_duration);
+    ESP_LOGI(TAG, "Updated watering duration to %" PRIu64, watering_duration);
 
     httpd_resp_send_chunk(req, NULL, 0);
 
@@ -364,8 +370,8 @@ void setup_wifi(void) {
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Error (%s) opening NVS handle!", esp_err_to_name(ret));
     } else {
-        uint16_t stored_watering_intrv = 0;
-        ret = nvs_get_u16(nvs_read_strg_handle, "waterIntrv", &stored_watering_intrv);
+        uint64_t stored_watering_intrv = 0;
+        ret = nvs_get_u64(nvs_read_strg_handle, "waterIntrv", &stored_watering_intrv);
         switch (ret) {
             case ESP_OK:
                 watering_interval = stored_watering_intrv * INTERVAL_MULTIPLIER;
@@ -378,12 +384,12 @@ void setup_wifi(void) {
                 ESP_LOGE(TAG, "Error (%s) reading!", esp_err_to_name(ret));
         }
 
-        uint16_t stored_watering_duration = 0;
-        ret = nvs_get_u16(nvs_read_strg_handle, "waterDurat", &stored_watering_duration);
+        uint64_t stored_watering_duration = 0;
+        ret = nvs_get_u64(nvs_read_strg_handle, "waterDurat", &stored_watering_duration);
         switch (ret) {
             case ESP_OK:
                 watering_duration = stored_watering_duration * WATERING_DURATION_MULTIPLIER;
-                ESP_LOGI(TAG, "Stored watering duration: %" PRIu16, watering_duration);
+                ESP_LOGI(TAG, "Stored watering duration: %" PRIu64, watering_duration);
                 break;
             case ESP_ERR_NVS_NOT_FOUND:
                 ESP_LOGI(TAG, "No stored watering duration found, using default.");
@@ -395,12 +401,14 @@ void setup_wifi(void) {
     }
 
     esp_http_client_config_t config = {
-        .host = "worldtimeapi.org",
-        .path = "/api/timezone/Europe/Rome",
+        .host = "timeapi.io",
+        .path = "/api/Time/current/zone",
+        .query = "timeZone=Europe/Rome",
         .transport_type = HTTP_TRANSPORT_OVER_TCP,
+        .user_data = output_buffer,
         .event_handler = _http_event_handler,
-        .user_data = output_buffer,  // Pass the buffer to the event handler
     };
+
     esp_http_client_handle_t client = esp_http_client_init(&config);
 
     esp_err_t err = esp_http_client_perform(client);
