@@ -28,6 +28,11 @@
         "chrono": "c",
         "ecdsa_alt.h": "c",
         "esp_crt_bundle.h": "c",
-        "random": "c"
+        "random": "c",
+        "esp_tls.h": "c",
+        "esp_sntp.h": "c",
+        "task.h": "c",
+        "esp_system.h": "c",
+        "numbers": "c"
     }
 }
