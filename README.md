@@ -1,4 +1,4 @@
-# ESPlant 🌱
+# ESPlant - Esp32 🌱
 
 **ESPlant** automates plant watering using ESP32 and lets you monitor everything via an Android app (https://github.com/SparklySparky/ESPlant-Android). Keep your plants happy and hydrated effortlessly!
 
