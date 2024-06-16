@@ -30,7 +30,7 @@ void initialize_water_timer(void)
     xTaskCreate(
                 (TaskFunction_t) &calculate_time_left,
                 "Time Left",
-                2048,
+                4096,
                 NULL,
                 1,
                 &time_left_calc_handle
@@ -69,7 +69,7 @@ void calculate_time_left(void)
             double seconds = difftime(now, incr_time);
             if (seconds > 0) {
                 
-                ESP_LOGI(TAG, "E' PASSATO");
+                update_incr_time();
 
             } else if (seconds == 0) {
                 
