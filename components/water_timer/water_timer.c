@@ -4,12 +4,14 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <esp_log.h>
-#include <http_server.h>
 #include <esp_tls.h>
 #include <esp_sntp.h>
 #include <esp_netif.h>
 #include <water_timer.h>
 #include <esp_http_client.h>
+
+#include <http_server.h>
+#include <data_storage.h>
 
 #define HOSE_PIN GPIO_NUM_26
 
@@ -18,13 +20,11 @@ void calculate_time_left(void);
 static const char *TAG = "Water Timer";
 
 TaskHandle_t time_left_calc_handle;
-TaskHandle_t watering_task_handle;
 
 bool is_watering = false;
 
 void initialize_water_timer(void)
 {   
-
     gpio_set_direction(HOSE_PIN, GPIO_MODE_OUTPUT);
 
     xTaskCreate(

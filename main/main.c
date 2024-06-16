@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <http_server.h>
 #include <water_timer.h>
+#include <data_storage.h>
 
 void app_main(void)
 {   

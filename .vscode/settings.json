@@ -33,6 +33,8 @@
         "esp_sntp.h": "c",
         "task.h": "c",
         "esp_system.h": "c",
-        "numbers": "c"
+        "numbers": "c",
+        "ip_addr.h": "c",
+        "sys.h": "c"
     }
 }
